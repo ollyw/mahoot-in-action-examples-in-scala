@@ -8,14 +8,18 @@ import org.apache.mahout.cf.taste.impl.neighborhood.NearestNUserNeighborhood
 import org.apache.mahout.cf.taste.impl.recommender.{GenericBooleanPrefUserBasedRecommender, ItemUserAverageRecommender, GenericUserBasedRecommender}
 import org.apache.mahout.cf.taste.impl.similarity.{LogLikelihoodSimilarity, PearsonCorrelationSimilarity}
 import org.apache.mahout.cf.taste.model.{PreferenceArray, DataModel}
+import org.apache.mahout.cf.taste.similarity.precompute.example.GroupLensDataModel
 import org.apache.mahout.common.RandomUtils
 import org.scalatest._
 import scala.collection.JavaConversions._
 
 class RecommenderSpec extends WordSpec with Matchers {
+  object SlowTest extends Tag("SlowTest")
+
   val introModel = new FileDataModel(new File("intro.csv"))
   // Data from http://grouplens.org/node/73
-  lazy val groupLensModel = new FileDataModel(new File("ua.base"))
+  lazy val groupLens10KModel = new FileDataModel(new File("ua.base"))
+  lazy val groupLens10MModel = new GroupLensDataModel(new File("ratings.dat"))
   RandomUtils.useTestSeed()
 
   "User based recommender" should {
@@ -53,7 +57,7 @@ class RecommenderSpec extends WordSpec with Matchers {
     "have error of 0.9 with Grouplens data" in {
       val evaluator = new AverageAbsoluteDifferenceRecommenderEvaluator
 
-      val score = evaluator.evaluate(userbasedRecommenderBuilder(), dataModelBuilder, groupLensModel, 0.9, 1.0)
+      val score = evaluator.evaluate(userbasedRecommenderBuilder(), dataModelBuilder, groupLens10KModel, 0.9, 1.0)
       score should be (0.9 +- 0.05)
     }
   }
@@ -66,7 +70,7 @@ class RecommenderSpec extends WordSpec with Matchers {
     "have an error of 0.748 with Grouplens data" in {
       val evaluator = new AverageAbsoluteDifferenceRecommenderEvaluator
 
-      val score = evaluator.evaluate(itemUserAverageRecommenderBuilder, dataModelBuilder, groupLensModel, 0.9, 1.0)
+      val score = evaluator.evaluate(itemUserAverageRecommenderBuilder, dataModelBuilder, groupLens10KModel, 0.9, 1.0)
       score should be (0.78 +- 0.05)
     }
 
@@ -81,7 +85,7 @@ class RecommenderSpec extends WordSpec with Matchers {
       val evaluator = new AverageAbsoluteDifferenceRecommenderEvaluator
 
       an [IllegalArgumentException] should be thrownBy {
-        evaluator.evaluate(userbasedRecommenderBuilder(10), booleanDataModelBuilder, groupLensModel, 0.9, 1.0)
+        evaluator.evaluate(userbasedRecommenderBuilder(10), booleanDataModelBuilder, groupLens10KModel, 0.9, 1.0)
       }
     }
 
@@ -98,11 +102,11 @@ class RecommenderSpec extends WordSpec with Matchers {
       }
 
       val stats = evaluator.evaluate(
-        builder(10), booleanDataModelBuilder, groupLensModel, null, 10, GenericRecommenderIRStatsEvaluator.CHOOSE_THRESHOLD, 1.0)
+        builder(10), booleanDataModelBuilder, groupLens10KModel, null, 10, GenericRecommenderIRStatsEvaluator.CHOOSE_THRESHOLD, 1.0)
 
       // These figures are nothing like the book. 9% precision and recall seems too poor
-      stats.getPrecision should be (0.09 +- 0.005)
-      stats.getRecall should be (0.09 +- 0.005)
+      stats.getPrecision should be (0.09 +- 0.01)
+      stats.getRecall should be (0.09 +- 0.01)
     }
 
     // Listing 3.7 with GenericBooleanPrefUserBasedRecommender
@@ -118,18 +122,35 @@ class RecommenderSpec extends WordSpec with Matchers {
       }
 
       val stats = evaluator.evaluate(
-        builder(10), booleanDataModelBuilder, groupLensModel, null, 10, GenericRecommenderIRStatsEvaluator.CHOOSE_THRESHOLD, 1.0)
+        builder(10), booleanDataModelBuilder, groupLens10KModel, null, 10, GenericRecommenderIRStatsEvaluator.CHOOSE_THRESHOLD, 1.0)
 
       // These figures are nothing like the book. 9% precision and recall seems too poor
       stats.getPrecision should be (0.192 +- 0.005)
       stats.getRecall should be (0.226 +- 0.005) //
     }
+
+    // Listing 4.2 is likely to cause an out of memory according to the book, so let's not do that one
+
+    // Listing 4.3
+    "have error of 0.89 with 1M Grouplens with 100 neighbours and 5% of data used for evaluation" taggedAs(SlowTest) in {
+      val evaluator = new AverageAbsoluteDifferenceRecommenderEvaluator
+
+      val score = evaluator.evaluate(userbasedRecommenderBuilder(100), dataModelBuilder, groupLens10MModel, 0.95, 0.05)
+      score should be (0.89 +- 0.05)
+    }
+
+    "have error of 0.85 using 1M Grouplens with 10 neighbours and 5% of data used for evaluation" taggedAs(SlowTest) in {
+      val evaluator = new AverageAbsoluteDifferenceRecommenderEvaluator
+
+      val score = evaluator.evaluate(userbasedRecommenderBuilder(10), dataModelBuilder, groupLens10MModel, 0.95, 0.05)
+      score should be (0.85 +- 0.05) // The book says 10 neighbours returns a worse result, but with mahoot 0.9 it doesn't
+    }
   }
 
-  def userbasedRecommenderBuilder(n: Int = 2) = new RecommenderBuilder() {
+  def userbasedRecommenderBuilder(numNeighbours: Int = 2) = new RecommenderBuilder() {
     def buildRecommender(dm: DataModel) = {
       val similarity = new PearsonCorrelationSimilarity(dm)
-      val neighbourhood = new NearestNUserNeighborhood(n, similarity, dm)
+      val neighbourhood = new NearestNUserNeighborhood(numNeighbours, similarity, dm)
       new GenericUserBasedRecommender(dm, neighbourhood, similarity)
     }
   }

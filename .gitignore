@@ -91,3 +91,6 @@ Network Trash Folder
 Temporary Items
 .apdisk
 
+# Grouplens data that can't be distributed
+ua.base
+ratings.dat
