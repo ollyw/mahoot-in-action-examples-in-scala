@@ -13,15 +13,17 @@ import org.scalatest._
 import scala.collection.JavaConversions._
 
 class RecommenderSpec extends WordSpec with Matchers {
-  val model = new FileDataModel(new File("intro.csv"))
+  val introModel = new FileDataModel(new File("intro.csv"))
+  // Data from http://grouplens.org/node/73
+  lazy val groupLensModel = new FileDataModel(new File("ua.base"))
   RandomUtils.useTestSeed()
 
   "Recommender" should {
 
     "recommend item 104" in {
-      val similarity = new PearsonCorrelationSimilarity(model)
-      val neighbourhood = new NearestNUserNeighborhood(2, similarity, model)
-      val recommender = new GenericUserBasedRecommender(model, neighbourhood, similarity)
+      val similarity = new PearsonCorrelationSimilarity(introModel)
+      val neighbourhood = new NearestNUserNeighborhood(2, similarity, introModel)
+      val recommender = new GenericUserBasedRecommender(introModel, neighbourhood, similarity)
       val recommendations = recommender.recommend(1, 1)
       recommendations.head.getItemID should be === 104
       recommendations.head.getValue should be === 4.257081f
@@ -30,7 +32,7 @@ class RecommenderSpec extends WordSpec with Matchers {
     "have an error of 1.0 using AverageAbsoluteDifferenceRecommender" in {
       val evaluator = new AverageAbsoluteDifferenceRecommenderEvaluator
 
-      val score = evaluator.evaluate(recommenderBuilder, dataModelBuilder, model, 0.9, 1.0)
+      val score = evaluator.evaluate(recommenderBuilder, dataModelBuilder, introModel, 0.9, 1.0)
       score should be === 1.0
     }
 
@@ -38,10 +40,17 @@ class RecommenderSpec extends WordSpec with Matchers {
       val evaluator = new GenericRecommenderIRStatsEvaluator()
 
       val stats = evaluator.evaluate(
-         recommenderBuilder, dataModelBuilder, model, null, 2, GenericRecommenderIRStatsEvaluator.CHOOSE_THRESHOLD, 1.0)
+         recommenderBuilder, dataModelBuilder, introModel, null, 2, GenericRecommenderIRStatsEvaluator.CHOOSE_THRESHOLD, 1.0)
 
       stats.getPrecision should be === 0.75
       stats.getRecall should be === 1.0
+    }
+
+    "have error of 0.9 with Grouplens data" in {
+      val evaluator = new AverageAbsoluteDifferenceRecommenderEvaluator
+
+      val score = evaluator.evaluate(recommenderBuilder, dataModelBuilder, groupLensModel, 0.9, 1.0)
+      score should be (0.9 +- 0.05)
     }
 
     def dataModelBuilder = new DataModelBuilder() {
