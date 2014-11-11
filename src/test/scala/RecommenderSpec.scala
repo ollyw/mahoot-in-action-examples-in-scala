@@ -1,13 +1,16 @@
 import java.io.File
+import org.apache.mahout.cf.taste.common.Weighting
 import org.apache.mahout.cf.taste.eval.{DataModelBuilder, RecommenderBuilder}
 import org.apache.mahout.cf.taste.impl.common.FastByIDMap
 import org.apache.mahout.cf.taste.impl.eval.{GenericRecommenderIRStatsEvaluator, AverageAbsoluteDifferenceRecommenderEvaluator}
 import org.apache.mahout.cf.taste.impl.model.{GenericBooleanPrefDataModel, GenericDataModel}
 import org.apache.mahout.cf.taste.impl.model.file.FileDataModel
-import org.apache.mahout.cf.taste.impl.neighborhood.NearestNUserNeighborhood
+import org.apache.mahout.cf.taste.impl.neighborhood.{ThresholdUserNeighborhood, NearestNUserNeighborhood}
+import org.apache.mahout.cf.taste.impl.recommender.svd.{ALSWRFactorizer, SVDRecommender}
 import org.apache.mahout.cf.taste.impl.recommender.{GenericBooleanPrefUserBasedRecommender, ItemUserAverageRecommender, GenericUserBasedRecommender}
-import org.apache.mahout.cf.taste.impl.similarity.{LogLikelihoodSimilarity, PearsonCorrelationSimilarity}
+import org.apache.mahout.cf.taste.impl.similarity._
 import org.apache.mahout.cf.taste.model.{PreferenceArray, DataModel}
+import org.apache.mahout.cf.taste.recommender.Recommender
 import org.apache.mahout.cf.taste.similarity.precompute.example.GroupLensDataModel
 import org.apache.mahout.common.RandomUtils
 import org.scalatest._
@@ -145,6 +148,103 @@ class RecommenderSpec extends WordSpec with Matchers {
       val score = evaluator.evaluate(userbasedRecommenderBuilder(10), dataModelBuilder, groupLens10MModel, 0.95, 0.05)
       score should be (0.85 +- 0.05) // The book says 10 neighbours returns a worse result, but with mahoot 0.9 it doesn't
     }
+
+    "have error of 0.84using 1M Grouplens with ThresholdUserNeighbourhood of 0.7" taggedAs(SlowTest) in {
+      val evaluator = new AverageAbsoluteDifferenceRecommenderEvaluator
+
+      val builder = recommenderBuilder { dm =>
+        val similarity = new PearsonCorrelationSimilarity(dm, Weighting.WEIGHTED)
+        val neighbourhood = new ThresholdUserNeighborhood(0.7, similarity, dm)
+        new GenericUserBasedRecommender(dm, neighbourhood, similarity)
+      }
+
+      evaluator.evaluate(builder, dataModelBuilder, groupLens10MModel, 0.95, 0.05) should be (0.84 +- 0.1)
+    }
+
+    "have error of 0.92 using 1M Grouplens with ThresholdUserNeighbourhood of 0.9" taggedAs(SlowTest) in {
+      val evaluator = new AverageAbsoluteDifferenceRecommenderEvaluator
+
+      val builder = recommenderBuilder { dm =>
+        val similarity = new PearsonCorrelationSimilarity(dm, Weighting.WEIGHTED)
+        val neighbourhood = new ThresholdUserNeighborhood(0.9, similarity, dm)
+        new GenericUserBasedRecommender(dm, neighbourhood, similarity)
+      }
+
+      evaluator.evaluate(builder, dataModelBuilder, groupLens10MModel, 0.95, 0.05) should be (0.92 +- 0.1)
+    }
+
+    "have error of 0.77 using 1M Grouplens with weighted ThresholdUserNeighbourhood of 0.9" taggedAs(SlowTest) in {
+      val evaluator = new AverageAbsoluteDifferenceRecommenderEvaluator
+
+      val builder = recommenderBuilder { dm =>
+        val similarity = new PearsonCorrelationSimilarity(dm, Weighting.WEIGHTED)
+        val neighbourhood = new ThresholdUserNeighborhood(0.9, similarity, dm)
+        new GenericUserBasedRecommender(dm, neighbourhood, similarity)
+      }
+
+      evaluator.evaluate(builder, dataModelBuilder, groupLens10MModel, 0.95, 0.05) should be (0.77 +- 0.05)
+    }
+
+    "have error of 0.82 using 1M Grouplens with weighted ThresholdUserNeighbourhood of 0.9" taggedAs(SlowTest) in {
+      val evaluator = new AverageAbsoluteDifferenceRecommenderEvaluator
+
+      val builder = recommenderBuilder { dm =>
+        val similarity = new EuclideanDistanceSimilarity(dm)
+        val neighbourhood = new ThresholdUserNeighborhood(0.9, similarity, dm)
+        new GenericUserBasedRecommender(dm, neighbourhood, similarity)
+      }
+
+      evaluator.evaluate(builder, dataModelBuilder, groupLens10MModel, 0.95, 0.05) should be (0.82 +- 0.05)
+    }
+
+    // Listing 4.5 - VERY SLOW - TEA BREAK TIME
+    "have error of 0.80 using 1M Grouplens with Spearman Correlation Similarity" taggedAs(SlowTest) in {
+      val evaluator = new AverageAbsoluteDifferenceRecommenderEvaluator
+
+      val builder = recommenderBuilder { dm =>
+        val similarity = new SpearmanCorrelationSimilarity(dm)
+        val neighbourhood = new ThresholdUserNeighborhood(0.9, similarity, dm)
+        new GenericUserBasedRecommender(dm, neighbourhood, similarity)
+      }
+
+      evaluator.evaluate(builder, dataModelBuilder, groupLens10MModel, 0.95, 0.01) should be (0.80 +- 0.05)
+    }
+
+    // VERY SLOW - TEA BREAK TIME
+    "have error of 0.68 using 1M Grouplens with Tanimoto Coefficient" taggedAs(SlowTest) in {
+      val evaluator = new AverageAbsoluteDifferenceRecommenderEvaluator
+
+      val builder = recommenderBuilder { dm =>
+        val similarity = new TanimotoCoefficientSimilarity(dm)
+        val neighbourhood = new ThresholdUserNeighborhood(0.70, similarity, dm)
+        new GenericUserBasedRecommender(dm, neighbourhood, similarity)
+      }
+
+      // Not sure why the Tanimoto performs so badly compared to the suggested value of 0.82 in the book
+      evaluator.evaluate(builder, dataModelBuilder, groupLens10MModel, 0.95, 0.03) should be (0.68 +- 0.1)
+    }
+
+    // VERY SLOW - TEA BREAK TIME
+    "have error of 0.73 using 1M Grouplens with LogLikelihood" taggedAs(SlowTest) in {
+      val evaluator = new AverageAbsoluteDifferenceRecommenderEvaluator
+
+      val builder = recommenderBuilder { dm =>
+        val similarity = new LogLikelihoodSimilarity(dm)
+        val neighbourhood = new ThresholdUserNeighborhood(0.90, similarity, dm)
+        new GenericUserBasedRecommender(dm, neighbourhood, similarity)
+      }
+
+      evaluator.evaluate(builder, dataModelBuilder, groupLens10MModel, 0.95, 0.03) should be (0.73 +- 0.02)
+    }
+  }
+
+  "SVD Recommender" should {
+    "have error of 0.69" in {
+      val evaluator = new AverageAbsoluteDifferenceRecommenderEvaluator
+      val builder = recommenderBuilder { dm => new SVDRecommender(dm, new ALSWRFactorizer(dm, 10, 0.05, 10)) }
+
+      evaluator.evaluate(builder, dataModelBuilder, groupLens10MModel, 0.95, 0.05) should be (0.69 +- 0.01)
+    }
   }
 
   def userbasedRecommenderBuilder(numNeighbours: Int = 2) = new RecommenderBuilder() {
@@ -163,5 +263,10 @@ class RecommenderSpec extends WordSpec with Matchers {
     def buildDataModel(trainingData: FastByIDMap[PreferenceArray]) = {
       new GenericBooleanPrefDataModel(GenericBooleanPrefDataModel.toDataMap(trainingData))
     }
+  }
+
+  // Java's interface based builders are so tedious. Create a functional wrapper
+  def recommenderBuilder(buildingBlock: DataModel => Recommender) = new RecommenderBuilder() {
+    def buildRecommender(dm: DataModel) = buildingBlock(dm)
   }
 }
